@@ -5,6 +5,7 @@ __pycache__/
 .idea
 training_models/
 models/
+datasets/
 
 # C extensions
 *.so
