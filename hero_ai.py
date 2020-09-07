@@ -2,6 +2,7 @@ import tensorflow_datasets as tfds
 import tensorflow as tf
 from os import path
 from datetime import datetime
+import dataset_manager as dsmg
 
 # Variables for the AI learning
 BUFFER_SIZE = 10000
@@ -19,6 +20,15 @@ def load_dataset(dataset, using_tfds=True):
         train_dataset, test_dataset = dataset["train"], dataset["test"]
 
         encoder = info.features["text"].encoder
+
+        train_dataset = train_dataset.shuffle(BUFFER_SIZE)
+        train_dataset = train_dataset.padded_batch(BATCH_SIZE)
+        test_dataset = test_dataset.padded_batch(BATCH_SIZE)
+
+        return train_dataset, test_dataset, encoder
+    else:
+        dataset, encoder = dsmg.getDataset(dataset)
+        train_dataset, test_dataset = dataset["train"], dataset["test"]
 
         train_dataset = train_dataset.shuffle(BUFFER_SIZE)
         train_dataset = train_dataset.padded_batch(BATCH_SIZE)
