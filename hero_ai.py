@@ -10,6 +10,7 @@ BATCH_SIZE = 64
 EPOCHS = 5
 VALIDATION_STEPS = 30
 LEARNING_RATE = 1e-4
+VOCAB_SIZE = 2**13
 
 
 # Function for loading a dataset to use on the model
@@ -20,6 +21,14 @@ def load_dataset(dataset, using_tfds=True):
         train_dataset, test_dataset = dataset["train"], dataset["test"]
 
         encoder = info.features["text"].encoder
+
+        if not encoder:
+            info.features["text"] = tfds.features.Text(encoder_config=tfds.features.text.TextEncoderConfig(encoder_cls=tfds.features.text.SubwordTextEncoder, vocab_size=VOCAB_SIZE))
+            encoder = info.features["text"].encoder
+
+            if not encoder:
+                print("No encoder")
+                return None
 
         train_dataset = train_dataset.shuffle(BUFFER_SIZE)
         train_dataset = train_dataset.padded_batch(BATCH_SIZE)
@@ -95,14 +104,14 @@ def save_model(model, deep=False, name=None):
 
 
 # We make a function for the model creation, just to beautify the code c:
-def create_model(encoder):
+def create_model():
     # Define the model
     model = tf.keras.Sequential([
-        tf.keras.layers.Embedding(encoder.vocab_size, 64),  # Embedding layer to store one vector pr. word
+        tf.keras.layers.Embedding(VOCAB_SIZE, 64),  # Embedding layer to store one vector pr. word
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64)),  # Bidirectional layer for RNN
-        tf.keras.layers.Dense(64, activation='relu'),  # Dense layer with neurons
+        tf.keras.layers.Dense(64, activation="relu"),  # Dense layer with neurons
         tf.keras.layers.Dropout(0.5),  # We put a dropout layer to prevent overfitting
-        tf.keras.layers.Dense(1)  # Single output layer for the toxicity
+        tf.keras.layers.Dense(1, activation="sigmoid")  # Single output layer for the toxicity, sigmoid for probability
     ])
 
     # Compile the Keras model
@@ -141,15 +150,15 @@ def test_model(model, test_dataset):
 
 def run():
     # Load the dataset
-    # datasets for testin' include "imdb_reviews/subwords8k"
-    dataset = "imdb_reviews/subwords8k"
+    # datasets which the AI can run from tensorflow_datasets include "wikipedia_toxicity_subtypes"
+    dataset = "wikipedia_toxicity_subtypes"
     print("Loading the " + dataset + " dataset...")
-    train_dataset, test_dataset, encoder = load_dataset(dataset)
+    train_dataset, test_dataset = load_dataset(dataset)
     print("Done loading!")
 
     # Create the model
     print("Creating the model...")
-    model = create_model(encoder)
+    model = create_model()
     print("Model created!")
 
     # Get model summary

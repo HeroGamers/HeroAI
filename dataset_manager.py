@@ -1,4 +1,6 @@
+import json
 import pandas as pd
+from os import path
 import tensorflow as tf
 
 
@@ -28,17 +30,56 @@ def slicesFromPanda(file):
         return dataset_slices
 
 
-def slicesFromTensor(file, batch_size):
-    dataset_slices = tf.data.experimental.make_csv_dataset(file, batch_size=batch_size, label_name="toxic",
-                                                           select_columns=["comment_text", "toxic"])
-    for feature_batch, label_batch in dataset_slices.take(1):
-        print("Toxic: {}".format(label_batch))
-        for key, value in feature_batch.items():
-            print("  {!r:20s}: {}".format(key, value))
-    return dataset_slices
+def datasetFromTensor(file, batch_size, buffer_size):
+    dataset = tf.data.experimental.make_csv_dataset(file, label_name="toxic", select_columns=["comment_text", "toxic"],
+                                                    shuffle_buffer_size=buffer_size, batch_size=batch_size)
+
+    # for feature_batch, label_batch in dataset.take(1):
+    #     print("Toxic: {}".format(label_batch))
+    #     for key, value in feature_batch.items():
+    #         print("  {!r:20s}: {}".format(key, value))
+    return dataset
 
 
-def getDataset(dataset):
+def tokenizeDataset(dataset, length):
+    # We use the tokenizer to take all the unique words, and make a dictionary where we assign a value to each word, so
+    # that it can be used in the model
+    tokenizer_path = "tokenizer.json"
+    tokenizer_json = None
+    if path.isfile(tokenizer_path):
+        with open(tokenizer_path, "r") as token_file:
+            tokenizer_json = json.load(token_file)
+
+    if tokenizer_json:
+        tokenizer = tf.keras.preprocessing.text.tokenizer_from_json(tokenizer_json)
+    else:
+        tokenizer = tf.keras.preprocessing.text.Tokenizer()
+
+    # Get text from dataset, put into list
+    print("Putting stuff into a list")
+    text_list = []
+    i = 1
+    for text_tensor, _ in dataset:
+        if i == 10:
+            break
+        print(text_tensor.numpy())
+        text_list.append(text_tensor.numpy())
+        i += 1
+
+    # Update the token with the dataset values
+    print(dataset)
+
+    print("Fitting tokenizer onto the dataset...")
+    tokenizer.fit_on_texts(text_list)
+    print("Done fitting tokenizer onto dataset!")
+
+    # Tokenize the dataset
+    dataset_sequence = tokenizer.texts_to_sequences(text_list)
+
+    return None
+
+
+def getDataset(dataset, batch_size=64, buffer_size=10000):
     base_path = "datasets/"
 
     load_dir = None
@@ -54,7 +95,10 @@ def getDataset(dataset):
     if load_dir:
         if train_file:
             # slice = slicesFromPanda(train_file)
-            slice = slicesFromTensor(train_file, 5)
+
+            dataset = datasetFromTensor(train_file, batch_size, buffer_size)
+            tokenized_dataset = tokenizeDataset(dataset, 1500)
+
     else:
         print("Not a valid dataset!")
     return None
