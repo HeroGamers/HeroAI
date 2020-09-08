@@ -10,7 +10,7 @@ BATCH_SIZE = 64
 EPOCHS = 5
 VALIDATION_STEPS = 30
 LEARNING_RATE = 1e-4
-VOCAB_SIZE = 2**13
+TAKE_SIZE = 100
 
 
 # Function for loading a dataset to use on the model
@@ -23,27 +23,23 @@ def load_dataset(dataset, using_tfds=True):
         encoder = info.features["text"].encoder
 
         if not encoder:
-            info.features["text"] = tfds.features.Text(encoder_config=tfds.features.text.TextEncoderConfig(encoder_cls=tfds.features.text.SubwordTextEncoder, vocab_size=VOCAB_SIZE))
-            encoder = info.features["text"].encoder
-
-            if not encoder:
-                print("No encoder")
-                return None
+            return None
 
         train_dataset = train_dataset.shuffle(BUFFER_SIZE)
         train_dataset = train_dataset.padded_batch(BATCH_SIZE)
         test_dataset = test_dataset.padded_batch(BATCH_SIZE)
 
-        return train_dataset, test_dataset, encoder
+        return train_dataset, test_dataset, encoder.vocab_size
     else:
-        dataset, encoder = dsmg.getDataset(dataset)
-        train_dataset, test_dataset = dataset["train"], dataset["test"]
+        dataset, word_vectors, input_max_length = dsmg.getDataset(dataset)
 
-        train_dataset = train_dataset.shuffle(BUFFER_SIZE)
-        train_dataset = train_dataset.padded_batch(BATCH_SIZE)
-        test_dataset = test_dataset.padded_batch(BATCH_SIZE)
+        train_data = dataset.skip(TAKE_SIZE).shuffle(BUFFER_SIZE)
+        train_data = train_data.padded_batch(BATCH_SIZE)
 
-        return train_dataset, test_dataset, encoder
+        test_data = dataset.take(TAKE_SIZE)
+        test_data = test_data.padded_batch(BATCH_SIZE)
+
+        return train_data, test_data, word_vectors + 1
 
 
 # We make a function for assigning a checkpoint-file to use for training
@@ -104,10 +100,10 @@ def save_model(model, deep=False, name=None):
 
 
 # We make a function for the model creation, just to beautify the code c:
-def create_model():
+def create_model(vocab_size):
     # Define the model
     model = tf.keras.Sequential([
-        tf.keras.layers.Embedding(VOCAB_SIZE, 64),  # Embedding layer to store one vector pr. word
+        tf.keras.layers.Embedding(vocab_size, 64),  # Embedding layer to store one vector pr. word
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64)),  # Bidirectional layer for RNN
         tf.keras.layers.Dense(64, activation="relu"),  # Dense layer with neurons
         tf.keras.layers.Dropout(0.5),  # We put a dropout layer to prevent overfitting
@@ -138,27 +134,17 @@ def train(model, training_data, testing_data, callbacks=None):
     return history
 
 
-# Function to test the model
-def test_model(model, test_dataset):
-    test_loss, test_acc = model.evaluate(test_dataset)
-
-    print('Test Loss: {}'.format(test_loss))
-    print('Test Accuracy: {}'.format(test_acc))
-
-    return test_loss, test_acc
-
-
 def run():
     # Load the dataset
     # datasets which the AI can run from tensorflow_datasets include "wikipedia_toxicity_subtypes"
-    dataset = "wikipedia_toxicity_subtypes"
+    dataset = "jigsaw-1"
     print("Loading the " + dataset + " dataset...")
-    train_dataset, test_dataset = load_dataset(dataset)
+    train_dataset, test_dataset, vocab_size = load_dataset(dataset, False)
     print("Done loading!")
 
     # Create the model
     print("Creating the model...")
-    model = create_model()
+    model = create_model(vocab_size)
     print("Model created!")
 
     # Get model summary
@@ -176,8 +162,15 @@ def run():
     print("Training finished!")
 
     # We save the model
-    print("Saving the model...")
+    print("Saving the model, weights only...")
     saved = save_model(model, False)
+    if saved:
+        print("Saved the model!")
+    else:
+        print("An error occurred whilst saving the model!")
+
+    print("Saving the model, everything...")
+    saved = save_model(model, True)
     if saved:
         print("Saved the model!")
     else:
@@ -185,7 +178,10 @@ def run():
 
     # We test the model
     print("Testing the model...")
-    test_loss, test_acc = test_model(model, test_dataset)
+    test_loss, test_acc = model.evaluate(test_dataset)
+
+    print('Test Loss: {}'.format(test_loss))
+    print('Test Accuracy: {}'.format(test_acc))
     print("Done testing the model!\n")
 
     return model

@@ -4,13 +4,16 @@ from os import path
 import tensorflow as tf
 
 
-def readDatset(path):
+def readDataset(path):
     try:
         dataset = pd.read_csv(path, index_col=0)
         if not dataset.empty:
             # Dataset preview
             head = dataset.head()
             print(head)
+
+            print("Keeping text and label columns...")
+            dataset = dataset[["comment_text", "toxic"]]
 
             return dataset, True
         else:
@@ -21,12 +24,12 @@ def readDatset(path):
 
 
 def slicesFromPanda(file):
-    dataset, found = readDatset(file)
+    dataset, found = readDataset(file)
     if found:
         dataset_slices = tf.data.Dataset.from_tensor_slices(dict(dataset))
-        for feature_batch in dataset_slices.take(1):
-            for key, value in feature_batch.items():
-                print("  {!r:20s}: {}".format(key, value))
+        # for feature_batch in dataset_slices.take(1):
+        #     for key, value in feature_batch.items():
+        #         print("  {!r:20s}: {}".format(key, value))
         return dataset_slices
 
 
@@ -41,7 +44,7 @@ def datasetFromTensor(file, batch_size, buffer_size):
     return dataset
 
 
-def tokenizeDataset(dataset, length):
+def tokenizeDataset(dataset):
     # We use the tokenizer to take all the unique words, and make a dictionary where we assign a value to each word, so
     # that it can be used in the model
     tokenizer_path = "tokenizer.json"
@@ -58,52 +61,81 @@ def tokenizeDataset(dataset, length):
     # Get text from dataset, put into list
     print("Putting stuff into a list")
     text_list = []
-    i = 1
-    for text_tensor, _ in dataset:
-        if i == 10:
-            break
-        print(text_tensor.numpy())
-        text_list.append(text_tensor.numpy())
-        i += 1
+    toxicity_sequence = []
+    for feature_batch in dataset:
+        isText = True
+        for _, value in feature_batch.items():
+            if isText:
+                text = str(value.numpy(), "utf-8")  # It is currently bytes, convert to string
+                text_list.append(text)
+                isText = False
+            else:
+                toxicity = value.numpy()
+                toxicity_sequence.append(toxicity)
+                isText = True
+
+    # Get longest text in the list...
+    max_length = len(max(text_list, key=len))
+    print("Done listing everything!")
 
     # Update the token with the dataset values
-    print(dataset)
-
     print("Fitting tokenizer onto the dataset...")
     tokenizer.fit_on_texts(text_list)
     print("Done fitting tokenizer onto dataset!")
 
+    # Save the tokenizer
+    print("Saving the tokenizer...")
+    tokenizer_json = tokenizer.to_json()
+    with open(tokenizer_path, "w") as token_file:
+        json.dump(tokenizer_json, token_file)
+    print("Done saving the tokenizer!")
+
     # Tokenize the dataset
-    dataset_sequence = tokenizer.texts_to_sequences(text_list)
+    print("Tokenizing dataset...")
+    text_sequence = tokenizer.texts_to_sequences(text_list)
+    print("Done tokenizing dataset!")
 
-    return None
+    # Pad the sequence
+    print("Padding the dataset with zeros...")
+    text_sequence_padded = tf.keras.preprocessing.sequence.pad_sequences(text_sequence, maxlen=max_length)
+    print("Done padding the dataset!")
+
+    # print(text_sequence_padded)
+    #
+    # print("Test")
+    # print(text_sequence_padded[0])
+    #
+    # text = tokenizer.sequences_to_texts([text_sequence_padded[0]])
+    #
+    # print(text)
+
+    print("Converting into a new dataset...")
+    tokenized_dataset = tf.data.Dataset.from_tensor_slices((text_sequence_padded, toxicity_sequence))
+    print("Converted!")
+
+    return tokenized_dataset, len(tokenizer.word_index), max_length
 
 
-def getDataset(dataset, batch_size=64, buffer_size=10000):
+def getDataset(dataset):
     base_path = "datasets/"
 
     load_dir = None
     train_file = None
-    test_content_file = None
-    test_labels_file = None
     if dataset == "jigsaw-1":
         load_dir = base_path + "jigsaw-toxic-comment-classification-challenge/"
         train_file = load_dir + "train.csv"
-        test_content_file = load_dir + "test.csv"
-        test_labels_file = load_dir + "test_labels.csv"
 
     if load_dir:
         if train_file:
-            # slice = slicesFromPanda(train_file)
+            slices = slicesFromPanda(train_file)
 
-            dataset = datasetFromTensor(train_file, batch_size, buffer_size)
-            tokenized_dataset = tokenizeDataset(dataset, 1500)
-
+            # dataset = datasetFromTensor(train_file, batch_size, buffer_size)
+            return tokenizeDataset(slices)
     else:
         print("Not a valid dataset!")
     return None
 
 
-if __name__ == "__main__":
-    getDataset("jigsaw-1")
-    # readDatset("datasets/jigsaw-toxic-comment-classification-challenge/train.csv")
+# if __name__ == "__main__":
+#     getDataset("jigsaw-1")
+#     # readDatset("datasets/jigsaw-toxic-comment-classification-challenge/train.csv")
