@@ -1,8 +1,11 @@
 import tensorflow_datasets as tfds
 import tensorflow as tf
-from os import path
+from os import path, environ
 from datetime import datetime
 import dataset_manager as dsmg
+
+# Fix for training
+environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 # Variables for the AI learning
 BUFFER_SIZE = 10000
@@ -32,6 +35,8 @@ def load_dataset(dataset, using_tfds=True):
         return train_dataset, test_dataset, encoder.vocab_size
     else:
         dataset, word_vectors, input_max_length = dsmg.getDataset(dataset)
+
+        print("Max length: " + str(input_max_length))
 
         train_data = dataset.skip(TAKE_SIZE).shuffle(BUFFER_SIZE)
         train_data = train_data.padded_batch(BATCH_SIZE)
@@ -153,7 +158,10 @@ def run():
     # Get a new checkpoint file and callback to it
     print("Readying the checkpoint file...")
     cp_callback = new_checkpointfile()
-    callbacks = [cp_callback]
+    time = datetime.now()
+    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + time.strftime("%Y%m%d%H%M%S"),
+                                                 histogram_freq=1)
+    callbacks = [cp_callback, tb_callback]
     print("Checkpoint file ready!")
 
     # We train the model

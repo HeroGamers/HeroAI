@@ -1,12 +1,17 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-.idea
+# Custom files
 tokenizer*.json
 training_models/
 models/
 datasets/
+logs/
+
+# IDEA
+.idea
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
 # C extensions
 *.so
