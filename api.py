@@ -1,6 +1,10 @@
 import json
-from os import path, listdir
+from os import path, listdir, environ
 import tensorflow as tf
+import numpy
+
+# Fix for finding the dnn implementation
+environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 tokenizer = None
 model = None
@@ -53,18 +57,22 @@ def predictToxicity(text, tokenized=False):
     if tokenizer and not tokenized:
         print("Tokenizer found, not tokenized, tokenizing...")
         text_sequence = tokenizer.texts_to_sequences([text])
+        tokenized = True
         print(text_sequence)
         decoded_text = tokenizer.sequences_to_texts(text_sequence)
         print(decoded_text)
 
-        text_sequence_padded = tf.keras.preprocessing.sequence.pad_sequences(text_sequence, maxlen=5000)
+        # Pad the text to maxlen
+        # text_sequence_padded = tf.keras.preprocessing.sequence.pad_sequences(text_sequence, maxlen=5000)
+        # text = text_sequence
 
-        tokenized = True
-        text = text_sequence_padded
+        # Just plainly put text into array
+        text = numpy.array(text_sequence)
 
     # Check for model
     if model:
         print("Model found, predicting...")
+        print(text)
         prediction = model(text)
         print("Toxicity prediction: {:2.0f}%".format(100*prediction.numpy()[0][0]))
         return prediction
@@ -76,5 +84,5 @@ def predictToxicity(text, tokenized=False):
 
 
 if __name__ == "__main__":
-    text = "Fuck you Karen!"
+    text = "I hope you will have a nice"
     prediction = predictToxicity(text)

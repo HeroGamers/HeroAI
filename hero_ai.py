@@ -4,16 +4,20 @@ from os import path, environ
 from datetime import datetime
 import dataset_manager as dsmg
 
-# Fix for training
+# Fix for finding the dnn implementation
 environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 # Variables for the AI learning
-BUFFER_SIZE = 10000
-BATCH_SIZE = 64
-EPOCHS = 5
-VALIDATION_STEPS = 30
-LEARNING_RATE = 1e-4
-TAKE_SIZE = 100
+BUFFER_SIZE = 10000  # Used for suffling the datasets
+BATCH_SIZE = 64  # Samples we run through before the model is updated
+EPOCHS = 5  # The amount of times the dataset is run through in training
+VALIDATION_STEPS = 30  # How many batches we run through during validation
+LEARNING_RATE = 1e-4  # The rate at which our weights will be updated
+TAKE_SIZE = 100  # How much we take from the dataset
+EMBED_DIM = 64  # The size of the embed layer's vector space
+DEEP_UNITS = 64  # The amount of units in our deep network LSTM layer
+DENSE_UNITS = 64  # The amount of units in our dense layer
+DATA_MAX_LENGTH = 2000
 
 
 # Function for loading a dataset to use on the model
@@ -32,7 +36,7 @@ def load_dataset(dataset, using_tfds=True):
         train_dataset = train_dataset.padded_batch(BATCH_SIZE)
         test_dataset = test_dataset.padded_batch(BATCH_SIZE)
 
-        return train_dataset, test_dataset, encoder.vocab_size
+        return train_dataset, test_dataset, encoder.vocab_size, None
     else:
         dataset, word_vectors, input_max_length = dsmg.getDataset(dataset)
 
@@ -44,7 +48,7 @@ def load_dataset(dataset, using_tfds=True):
         test_data = dataset.take(TAKE_SIZE)
         test_data = test_data.padded_batch(BATCH_SIZE)
 
-        return train_data, test_data, word_vectors + 1
+        return train_data, test_data, word_vectors + 1, input_max_length
 
 
 # We make a function for assigning a checkpoint-file to use for training
@@ -108,9 +112,9 @@ def save_model(model, deep=False, name=None):
 def create_model(vocab_size):
     # Define the model
     model = tf.keras.Sequential([
-        tf.keras.layers.Embedding(vocab_size, 64),  # Embedding layer to store one vector pr. word
-        tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64)),  # Bidirectional layer for RNN
-        tf.keras.layers.Dense(64, activation="relu"),  # Dense layer with neurons
+        tf.keras.layers.Embedding(vocab_size, EMBED_DIM),  # Embedding layer to store one vector pr. word
+        tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(DEEP_UNITS)),  # Bidirectional layer for RNN
+        tf.keras.layers.Dense(DENSE_UNITS, activation="relu"),  # Dense layer with neurons
         tf.keras.layers.Dropout(0.5),  # We put a dropout layer to prevent overfitting
         tf.keras.layers.Dense(1, activation="sigmoid")  # Single output layer for the toxicity, sigmoid for probability
     ])
@@ -144,7 +148,7 @@ def run():
     # datasets which the AI can run from tensorflow_datasets include "wikipedia_toxicity_subtypes"
     dataset = "jigsaw-1"
     print("Loading the " + dataset + " dataset...")
-    train_dataset, test_dataset, vocab_size = load_dataset(dataset, False)
+    train_dataset, test_dataset, vocab_size, input_max_length = load_dataset(dataset, False)
     print("Done loading!")
 
     # Create the model
