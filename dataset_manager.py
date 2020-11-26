@@ -6,7 +6,7 @@ import tensorflow as tf
 
 def readDataset(path):
     try:
-        dataset = pd.read_csv(path, index_col=0)
+        dataset = pd.read_csv(path, index_col=0, encoding='ISO-8859-1')
         if not dataset.empty:
             # Dataset preview
             head = dataset.head()
