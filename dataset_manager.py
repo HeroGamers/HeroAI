@@ -1,19 +1,37 @@
 import json
 import pandas as pd
+from pandas import DataFrame
 from os import path
 import tensorflow as tf
 
 
-def readDataset(path):
+# Function to preprocess our datasets
+def preprocessPandasDataFrame(df: DataFrame, dataset_name):
+    if dataset_name == "jigsaw-1":
+        df['text'].replace('''([!"#$%&()*+,\-./':;<=>?@[\]^_`{|}~])''', '', regex=True, inplace=True)
+        df['text'].replace('([\n\t])', ' ', regex=True, inplace=True)
+    return df
+
+
+def readDataset(path, dataset_name):
     try:
-        dataset = pd.read_csv(path, index_col=0, encoding='ISO-8859-1')
+        dataset = pd.read_csv(path, index_col=0, encoding='utf-8')
         if not dataset.empty:
             # Dataset preview
             head = dataset.head()
             print(head)
 
+            # Rename columns
+            if dataset_name == "jigsaw-1":
+                dataset.rename(columns={"comment_text": "text"}, inplace=True)
+
             print("Keeping text and label columns...")
-            dataset = dataset[["comment_text", "toxic"]]
+            dataset = dataset[["text", "toxic"]]
+
+            # Preprocess the dataset
+            print("Preprocessing dataset...")
+            dataset = preprocessPandasDataFrame(dataset, dataset_name)
+            print("Done preprocessing the dataset!")
 
             return dataset, True
         else:
@@ -23,13 +41,17 @@ def readDataset(path):
     return None, False
 
 
-def slicesFromPanda(file):
-    dataset, found = readDataset(file)
+def slicesFromPanda(file, dataset_name):
+    dataset, found = readDataset(file, dataset_name)
     if found:
-        dataset_slices = tf.data.Dataset.from_tensor_slices(dict(dataset))
-        # for feature_batch in dataset_slices.take(1):
-        #     for key, value in feature_batch.items():
-        #         print("  {!r:20s}: {}".format(key, value))
+        dataset_slices = tf.data.Dataset.from_tensor_slices((dataset['text'], dataset['toxic']))
+
+        print(dataset_slices)
+
+        for text, label in dataset_slices.take(4):
+            print("  'text'     : ", text.numpy())
+            print("  'toxic'    : ", label.numpy())
+
         return dataset_slices
 
 
@@ -44,13 +66,14 @@ def datasetFromTensor(file, batch_size, buffer_size):
     return dataset
 
 
+# Not used anymore - we tokenize in the model
 def tokenizeDataset(dataset):
     # We use the tokenizer to take all the unique words, and make a dictionary where we assign a value to each word, so
     # that it can be used in the model
     tokenizer_path = "tokenizer.json"
     tokenizer_json = None
     if path.isfile(tokenizer_path):
-        with open(tokenizer_path, "r") as token_file:
+        with open(tokenizer_path, "r", encoding='utf-8') as token_file:
             tokenizer_json = json.load(token_file)
 
     if tokenizer_json:
@@ -66,7 +89,7 @@ def tokenizeDataset(dataset):
         isText = True
         for _, value in feature_batch.items():
             if isText:
-                text = str(value.numpy(), "utf-8")  # It is currently bytes, convert to string
+                text = str(value.numpy(), 'utf-8')  # It is currently bytes, convert to string
                 text_list.append(text)
                 isText = False
             else:
@@ -86,8 +109,8 @@ def tokenizeDataset(dataset):
     # Save the tokenizer
     print("Saving the tokenizer...")
     tokenizer_json = tokenizer.to_json()
-    with open(tokenizer_path, "w") as token_file:
-        json.dump(tokenizer_json, token_file)
+    with open(tokenizer_path, "w", encoding='utf-8') as token_file:
+        json.dump(tokenizer_json, token_file, ensure_ascii=False)
     print("Done saving the tokenizer!")
 
     # Tokenize the dataset
@@ -127,10 +150,12 @@ def getDataset(dataset):
 
     if load_dir:
         if train_file:
-            slices = slicesFromPanda(train_file)
+            dataset = slicesFromPanda(train_file, dataset)
 
             # dataset = datasetFromTensor(train_file, batch_size, buffer_size)
-            return tokenizeDataset(slices)
+            # print(tokenizeDataset(dataset))
+            # return tokenizeDataset(dataset)
+            return dataset
     else:
         print("Not a valid dataset!")
     return None

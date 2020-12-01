@@ -38,42 +38,42 @@ def getTokenizer():
 
 
 def predictToxicity(text, tokenized=False):
-    global tokenizer
+    # global tokenizer
     global model
 
-    print("Tokenizer: ")
-    print(tokenizer)
+    # print("Tokenizer: ")
+    # print(tokenizer)
     print("Model: ")
     print(model)
     print("Tokenized: ")
     print(tokenized)
 
-    # Check for tokenizer first
-    if not tokenizer:
-        print("No tokenizer, getting tokenizer...")
-        tokenizer = getTokenizer()
+    # # Check for tokenizer first
+    # if not tokenizer:
+    #     print("No tokenizer, getting tokenizer...")
+    #     tokenizer = getTokenizer()
 
-    # Tokenize if not tokenized
-    if tokenizer and not tokenized:
-        print("Tokenizer found, not tokenized, tokenizing...")
-        text_sequence = tokenizer.texts_to_sequences([text])
-        tokenized = True
-        print(text_sequence)
-        decoded_text = tokenizer.sequences_to_texts(text_sequence)
-        print(decoded_text)
-
-        # Pad the text to maxlen
-        # text_sequence_padded = tf.keras.preprocessing.sequence.pad_sequences(text_sequence, maxlen=5000)
-        # text = text_sequence
-
-        # Just plainly put text into array
-        text = numpy.array(text_sequence)
+    # # Tokenize if not tokenized
+    # if tokenizer and not tokenized:
+    #     print("Tokenizer found, not tokenized, tokenizing...")
+    #     text_sequence = tokenizer.texts_to_sequences([text])
+    #     tokenized = True
+    #     print(text_sequence)
+    #     decoded_text = tokenizer.sequences_to_texts(text_sequence)
+    #     print(decoded_text)
+    #
+    #     # Pad the text to maxlen
+    #     # text_sequence_padded = tf.keras.preprocessing.sequence.pad_sequences(text_sequence, maxlen=5000)
+    #     # text = text_sequence
+    #
+    #     # Just plainly put text into array
+    #     text = numpy.array(text_sequence)
 
     # Check for model
     if model:
         print("Model found, predicting...")
         print(text)
-        prediction = model(text)
+        prediction = model(numpy.array([(text)]))
         print("Toxicity prediction: {:2.0f}%".format(100*prediction.numpy()[0][0]))
         return prediction
     else:
