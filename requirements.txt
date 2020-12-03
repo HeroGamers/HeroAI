@@ -1,4 +1,4 @@
-tensorflow==2.4.0rc3
+tf-nightly==2.5.0.dev20201203
 tensorflow-datasets==3.2.1
 numpy==1.19.3
 matplotlib==3.3.1

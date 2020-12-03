@@ -10,6 +10,11 @@ from model_manager import addFile, addFeatures, Models
 # Fix for finding the dnn implementation
 environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
+# Fix for cuDNN stream - most likely after new drivers
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
 # Variables for the AI learning
 BUFFER_SIZE = 10000  # Used for suffling the datasets
 BATCH_SIZE = 64  # Samples we run through before the model is updated
