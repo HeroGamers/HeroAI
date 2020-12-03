@@ -216,7 +216,7 @@ def create_model(encoder):
     ])
 
     # Compile the Keras model
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),  # Our loss function, binary cuz two labels
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),  # Our loss function, binary cuz two labels
                   optimizer=tf.keras.optimizers.Adam(LEARNING_RATE),  # Our loss optimizer - we use Adam
                   metrics=['accuracy'])  # Metric we use to monitor our loss with
 
