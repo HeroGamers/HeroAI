@@ -4,6 +4,7 @@ training_models/
 models/
 datasets/
 logs/
+HeroAI.db
 
 # IDEA
 .idea

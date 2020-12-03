@@ -6,7 +6,7 @@ import tensorflow as tf
 # Function to preprocess our datasets
 def preprocessPandasDataFrame(df: DataFrame, dataset_name):
     if dataset_name == "jigsaw-1":
-        df['text'].replace('''([!"#$%&()*+,\-./':;<=>?@[\]^_`{|}~])''', '', regex=True, inplace=True)
+        df['text'].replace('''([!"#$%&()*+,\-./':;<=>?@[\]^_`{|}~0-9])''', '', regex=True, inplace=True)
         df['text'].replace('([\n\t])', ' ', regex=True, inplace=True)
     return df
 

@@ -4,6 +4,8 @@ import io
 from os import path, environ, makedirs
 from datetime import datetime
 import dataset_manager as dsmg
+from model_manager import newModel as newDatabaseModel
+from model_manager import addFile, addFeatures, Models
 
 # Fix for finding the dnn implementation
 environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
@@ -17,12 +19,16 @@ LEARNING_RATE = 1e-4  # The rate at which our weights will be updated
 EMBED_DIM = 64  # The size of the embed layer's vector space
 DEEP_UNITS = 64  # The amount of units in our deep network LSTM layer
 DENSE_UNITS = 64  # The amount of units in our dense layer
+DROPOUT = 0.5  # To make sure we don't overfit, we have a dropout layer with this value
 
 # Data variables - also changes learning
-MAX_FEATURES = 10000  # The max vocab size we will train
+MAX_FEATURES = 20000  # The max vocab size we will train
 MAX_LENGTH = 2000  # The max number of words in a sentence we will take
 TRAIN_TAKE_SIZE = 0  # How much we take from the dataset for the training - can be set to 0 to take everything (needs to be at least BATCH_SIZE. Steps for each epoch is TRAIN_TAKE_SIZE//BATCH_SIZE)
 TEST_TAKE_SIZE = 3000  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE)
+
+# Program global variables
+db_model = None
 
 
 # Function for loading a dataset to use on the model
@@ -70,7 +76,7 @@ def load_dataset(dataset, using_tfds=True):
 
 # We make a function for assigning a checkpoint-file to use for training
 def new_checkpointfile(name=None):
-    base_dir = "training_models/"
+    base_dir = "models/training_models/"
     if not name:
         i = 1
         while True:
@@ -85,22 +91,45 @@ def new_checkpointfile(name=None):
 
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
 
+    # Add checkpoint file path to db
+    addFile(db_model, checkpoint_path, "TrainingCheckpoint")
+
     return cp_callback
 
 
 # Function for saving the current model - either entire model or just weights
 def save_model(model: tf.keras.Model, deep=False, embedding=None, name=None):
     def save_deep(base_dir, name):
-        current_path = base_dir + str(name)
-        if not path.exists(current_path):
-            model.save(current_path)
+        try:
+            # Save as a TensorFlow SaveModel
+            current_path = base_dir + "SaveModel/" + str(name)
+            if not path.exists(current_path):
+                model.save(current_path)
+
+                # Add SaveModel files path to db
+                addFile(db_model, current_path, "SaveModel")
+
+            # Saving as a Keras HDF5 file is not possible with the TextVectorization layer
+            # # Save as a Keras HDF5 file
+            # current_path = base_dir + "HDF5/" + str(name) + ".h5"
+            # if not path.exists(current_path):
+            #     model.save(current_path)
+            #
+            #     # Add HDF5 file path to db
+            #     addFile(db_model, current_path, "HDF5")
             return True
-        return False
+        except Exception as e:
+            print("Error while saving the model - " + str(e))
+            return False
 
     def save_weights(base_dir, name):
         current_path = base_dir + str(name) + ".ckpt"
         if not path.exists(current_path):
             model.save_weights(current_path)
+
+            # Add weight files path to db
+            addFile(db_model, current_path, "Weights")
+
             return True
         return False
 
@@ -126,6 +155,10 @@ def save_model(model: tf.keras.Model, deep=False, embedding=None, name=None):
                 out_m.write(word + "\n")
             out_v.close()
             out_m.close()
+
+            # Add embedding files path to db
+            addFile(db_model, current_path, "Embedding")
+
             return True
 
     # Let the saving begin
@@ -173,7 +206,7 @@ def create_model(encoder):
         tf.keras.layers.Embedding(input_dim=MAX_FEATURES, output_dim=EMBED_DIM, mask_zero=True),  # Embedding layer to store one vector pr. word integer
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(DEEP_UNITS)),  # Bidirectional layer for RNN
         tf.keras.layers.Dense(DENSE_UNITS, activation="relu"),  # Dense layer with neurons
-        tf.keras.layers.Dropout(0.5),  # We put a dropout layer to prevent overfitting
+        tf.keras.layers.Dropout(DROPOUT),  # We put a dropout layer to prevent overfitting
         tf.keras.layers.Dense(1, activation="sigmoid")  # Single output layer for the toxicity, sigmoid for probability
     ])
 
@@ -201,7 +234,15 @@ def train(model: tf.keras.Model, training_data, testing_data, callbacks=None):
     return history
 
 
-def run():
+def run(model_name=None):
+    # Create model in database
+    global db_model
+    db_model = newDatabaseModel()
+
+    if not model_name:
+        # Generate a name for the model
+        model_name = db_model.CreationDate.strftime("%Y%m%d%H%M%S")
+
     # Load the dataset
     # datasets which the AI can run from tensorflow_datasets include "wikipedia_toxicity_subtypes"
     dataset_name = "jigsaw-1"
@@ -229,34 +270,38 @@ def run():
     # Get a new checkpoint file and callback to it
     print("Readying the checkpoint file...")
     cp_callback = new_checkpointfile()
-    time = datetime.now()
-    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + time.strftime("%Y%m%d%H%M%S"),
+    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + model_name,
                                                  histogram_freq=1)
+    # Add tensorboard files path to db
+    addFile(db_model, "logs/training/" + model_name, "TensorBoard")
     callbacks = [cp_callback, tb_callback]
     print("Checkpoint file ready!")
 
     # We train the model
     print("Initiating training sequence...")
+    start_time = datetime.now()
     history = train(model, train_dataset, test_dataset, callbacks)
-    print("Training finished!")
+    end_time = datetime.now()
+    train_time = end_time-start_time
+    print("Training finished! - Time taken: " + str(train_time))
 
     # We save the model
     print("Saving the model, weights only...")
-    saved = save_model(model, False)
+    saved = save_model(model, False, name=model_name)
     if saved:
         print("Saved the model!")
     else:
         print("An error occurred whilst saving the model!")
 
     print("Saving the model, everything...")
-    saved = save_model(model, True)
+    saved = save_model(model, True, name=model_name)
     if saved:
         print("Saved the model!")
     else:
         print("An error occurred whilst saving the model!")
 
     print("Saving the model, trained word embeddings...")
-    saved = save_model(model, embedding=encoder)
+    saved = save_model(model, embedding=encoder, name=model_name)
     if saved:
         print("Saved the model!")
     else:
@@ -269,6 +314,18 @@ def run():
     print('Test Loss: {}'.format(test_loss))
     print('Test Accuracy: {}'.format(test_acc))
     print("Done testing the model!\n")
+
+    # We add the model to the database
+    print("Adding model features to database...")
+    features = addFeatures(model=db_model, t_accuracy=history.history['accuracy'][-1],
+                           t_loss=history.history['loss'][-1], v_accuracy=history.history['val_accuracy'][-1],
+                           v_loss=history.history['val_loss'][-1], e_accuracy=test_loss, e_loss=test_loss,
+                           buffer_size=BUFFER_SIZE, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                           validation_steps=VALIDATION_STEPS, learning_rate=LEARNING_RATE, dropout=DROPOUT,
+                           embed_dim=EMBED_DIM, deep_units=DEEP_UNITS, dense_units=DENSE_UNITS,
+                           max_features=MAX_FEATURES, max_length=MAX_LENGTH, train_take_size=TRAIN_TAKE_SIZE,
+                           test_take_size=TEST_TAKE_SIZE, tr_time=str(train_time))
+    print("Done adding the model features to the database!")
 
     return model
 

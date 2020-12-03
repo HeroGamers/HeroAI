@@ -6,10 +6,13 @@ from numpy import ndarray
 from flask import Flask
 from flask_restful import Resource, Api, reqparse
 from flask_restful.inputs import boolean
+from model_manager import getNewestModel, getModelFile
 
 
 # Variables
 debug = False
+devModels = False  # Whether to pick the newest 'version', or the newest trained model
+modelType = "SaveModel"
 
 
 # Function for debug logging
@@ -19,6 +22,7 @@ def logDebug(text):
 
 
 # ---=HeroAI Interface=--- #
+
 # Fix for finding the dnn implementation
 environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
@@ -27,12 +31,22 @@ model = None
 
 
 def getTrainedModel(file):
-    model = tf.keras.models.load_model(file)
+    model = tf.keras.models.load_model(file, compile=False)
     model.summary()
     return model
 
 
 def newestModelFile():
+    db_model = getNewestModel(devModels)
+    if db_model:
+        print("Got model ID: " + str(db_model.ID))
+        model_file = getModelFile(db_model, modelType)
+        if model_file and model_file.Path:
+            return model_file.Path
+        else:
+            print("Couldn't get path from model in database, getting model manually")
+    else:
+        print("Couldn't get model from database, getting model manually")
     base_dir = "models/deep_models/"
     models = [model for model in listdir(base_dir) if path.isdir(base_dir + model)]
     models.sort()
@@ -127,7 +141,6 @@ api.add_resource(Toxicity, '/toxicity')
 
 
 # ---=Python Script Run=--- #
-
 
 # Function to run the server
 def runServer():
