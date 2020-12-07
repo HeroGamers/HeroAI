@@ -7,12 +7,13 @@ import dataset_manager as dsmg
 from model_manager import newModel as newDatabaseModel
 from model_manager import addFile, addFeatures
 
-# Fix for finding the dnn implementation
-environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
-
 # Allow memory growth on all GPU's
 gpu_devices = tf.config.experimental.list_physical_devices('GPU')
 for device in gpu_devices: tf.config.experimental.set_memory_growth(device, True)
+
+# Fix for finding the dnn implementation - force GPU memory growth
+environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+
 
 # Variables for the AI learning
 BUFFER_SIZE = 10000  # Used for suffling the datasets
@@ -207,7 +208,8 @@ def create_model(encoder):
     model = tf.keras.Sequential([
         tf.keras.Input(shape=(1,), dtype=tf.string),  # Our input into the model is a string
         encoder,  # Our text encoder to make text into integers
-        tf.keras.layers.Embedding(input_dim=MAX_FEATURES, output_dim=EMBED_DIM, mask_zero=True),  # Embedding layer to store one vector pr. word integer
+        tf.keras.layers.Embedding(input_dim=MAX_FEATURES, output_dim=EMBED_DIM),  # Embedding layer to store one vector pr. word integer
+        tf.keras.layers.Masking(mask_value=0),  # Remove the zeroes that are given from the embedding layer (having the mask_zero value on the embedding layer throws an error [tensorflow.python.framework.errors_impl.CancelledError:  [_Derived_]RecvAsync is cancelled.])
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(DEEP_UNITS)),  # Bidirectional layer for RNN
         tf.keras.layers.Dense(DENSE_UNITS, activation="relu"),  # Dense layer with neurons
         tf.keras.layers.Dropout(DROPOUT),  # We put a dropout layer to prevent overfitting
