@@ -1,5 +1,5 @@
-from peewee import SqliteDatabase, Model, CharField, InternalError, ForeignKeyField, \
-    DateTimeField, IntegerField, SmallIntegerField, FloatField, TimeField, AutoField
+from peewee import SqliteDatabase, Model, CharField, ForeignKeyField, DateTimeField, IntegerField, SmallIntegerField, \
+     FloatField, TimeField, AutoField
 import datetime
 
 db = SqliteDatabase('./models/HeroAI.db')

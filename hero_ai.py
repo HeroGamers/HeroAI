@@ -5,15 +5,14 @@ from os import path, environ, makedirs
 from datetime import datetime
 import dataset_manager as dsmg
 from model_manager import newModel as newDatabaseModel
-from model_manager import addFile, addFeatures, Models
+from model_manager import addFile, addFeatures
 
 # Fix for finding the dnn implementation
 environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
-# Fix for cuDNN stream - most likely after new drivers
-physical_devices = tf.config.experimental.list_physical_devices('GPU')
-assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
-config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
+# Allow memory growth on all GPU's
+gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+for device in gpu_devices: tf.config.experimental.set_memory_growth(device, True)
 
 # Variables for the AI learning
 BUFFER_SIZE = 10000  # Used for suffling the datasets
@@ -30,7 +29,7 @@ DROPOUT = 0.5  # To make sure we don't overfit, we have a dropout layer with thi
 MAX_FEATURES = 20000  # The max vocab size we will train
 MAX_LENGTH = 2000  # The max number of words in a sentence we will take
 TRAIN_TAKE_SIZE = 0  # How much we take from the dataset for the training - can be set to 0 to take everything (needs to be at least BATCH_SIZE. Steps for each epoch is TRAIN_TAKE_SIZE//BATCH_SIZE)
-TEST_TAKE_SIZE = 3000  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE)
+TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
 
 # Program global variables
 db_model = None
@@ -276,7 +275,7 @@ def run(model_name=None):
     print("Readying the checkpoint file...")
     cp_callback = new_checkpointfile()
     tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + model_name,
-                                                 histogram_freq=1)
+                                                 update_freq='batch')  # Histogram_freq removed cuz not supported by trackableweighthandlers
     # Add tensorboard files path to db
     addFile(db_model, "logs/training/" + model_name, "TensorBoard")
     callbacks = [cp_callback, tb_callback]
