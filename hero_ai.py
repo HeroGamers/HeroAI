@@ -301,7 +301,7 @@ def run(model_name=None):
     es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOPPING_PATIENCE)
     # Add a ModelCheckpoint callback, to try and save the best model from the training
     bestmodel_path = "models/deep_models/BestSaveModel/"+model_name
-    mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=path, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+    mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=bestmodel_path, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
     addFile(db_model, bestmodel_path, "BestSaveModel")  # Add path to db
     # Add the callbacks to the callbacks function
     callbacks = [cp_callback, tb_callback, mc_callback, es_callback]
