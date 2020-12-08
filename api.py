@@ -12,7 +12,7 @@ from model_manager import getNewestModel, getModelFile
 # Variables
 debug = False
 devModels = False  # Whether to pick the newest 'version', or the newest trained model
-modelType = "SaveModel"
+modelTypes = ["BestSaveModel", "SaveModel", "HDF5"]
 
 
 # Function for debug logging
@@ -40,11 +40,13 @@ def newestModelFile():
     db_model = getNewestModel(devModels)
     if db_model:
         print("Got model ID: " + str(db_model.ID))
-        model_file = getModelFile(db_model, modelType)
-        if model_file and model_file.Path:
-            return model_file.Path
-        else:
-            print("Couldn't get path from model in database, getting model manually")
+        # Loop through the different modeltypes
+        for modelType in modelTypes:
+            model_file = getModelFile(db_model, modelType)
+            if model_file and model_file.Path:
+                return model_file.Path
+            else:
+                print("Couldn't get path from model in database, type: " + modelType)
     else:
         print("Couldn't get model from database, getting model manually")
     base_dir = "models/deep_models/"

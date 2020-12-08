@@ -25,13 +25,13 @@ EMBED_DIM = 64  # The size of the embed layer's vector space
 DEEP_UNITS = 64  # The amount of units in our deep network LSTM layer
 DENSE_UNITS = 64  # The amount of units in our dense layer
 DROPOUT = 0.5  # To make sure we don't overfit, we have a dropout layer with this value
-EARLY_STOPPING_PATIENCE = 5
+EARLY_STOPPING_PATIENCE = 10
 
 # Data variables - also changes learning
 MAX_FEATURES = 20000  # The max vocab size we will train
 MAX_LENGTH = 2000  # The max number of words in a sentence we will take
 TRAIN_TAKE_SIZE = 0  # How much we take from the dataset for the training - can be set to 0 to take everything (needs to be at least BATCH_SIZE. Steps for each epoch is TRAIN_TAKE_SIZE//BATCH_SIZE)
-TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
+TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
 TEST_TAKE_PERCENTAGE = 0.2  # How much we take from the dataset for the test and validation, in percentage. [This setting overrides the test_take_size, setting this to 0 will use the test_take_size].
 
 # Program global variables
@@ -300,9 +300,9 @@ def run(model_name=None):
     # Add an EarlyStopping callback, to stop the model when it reaches its lowest value in loss
     es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOPPING_PATIENCE)
     # Add a ModelCheckpoint callback, to try and save the best model from the training
-    path = "models/deep_models/BestSaveModel/"+model_name
+    bestmodel_path = "models/deep_models/BestSaveModel/"+model_name
     mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=path, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-    addFile(db_model, path, "BestSaveModel")  # Add path to db
+    addFile(db_model, bestmodel_path, "BestSaveModel")  # Add path to db
     # Add the callbacks to the callbacks function
     callbacks = [cp_callback, tb_callback, mc_callback, es_callback]
     print("Callbacks ready!")
@@ -337,13 +337,16 @@ def run(model_name=None):
     else:
         print("An error occurred whilst saving the model!")
 
-    # We test the model
-    print("Testing the model...")
-    test_loss, test_acc = model.evaluate(test_dataset)
+    # We test the best model
+    print("Testing the best model...")
+    # Get the model
+    best_model = tf.keras.models.load_model(bestmodel_path, compile=False)
+    best_model.summary()
+    test_loss, test_acc = best_model.evaluate(test_dataset)
 
     print('Test Loss: {}'.format(test_loss))
     print('Test Accuracy: {}'.format(test_acc))
-    print("Done testing the model!\n")
+    print("Done testing the best model!\n")
 
     # We add the model to the database
     print("Adding model features to database...")
