@@ -18,19 +18,21 @@ environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 # Variables for the AI learning
 BUFFER_SIZE = 10000  # Used for suffling the datasets
 BATCH_SIZE = 64  # Samples we run through before the model is updated
-EPOCHS = 15  # The amount of times the dataset is run through in training
-VALIDATION_STEPS = 30  # How many batches we run through during validation
+EPOCHS = 50  # The amount of times the dataset is run through in training
+VALIDATION_STEPS = 30  # How many batches we run through during validation // This is calculated when we load the dataset
 LEARNING_RATE = 1e-4  # The rate at which our weights will be updated
 EMBED_DIM = 64  # The size of the embed layer's vector space
 DEEP_UNITS = 64  # The amount of units in our deep network LSTM layer
 DENSE_UNITS = 64  # The amount of units in our dense layer
 DROPOUT = 0.5  # To make sure we don't overfit, we have a dropout layer with this value
+EARLY_STOPPING_PATIENCE = 5
 
 # Data variables - also changes learning
 MAX_FEATURES = 20000  # The max vocab size we will train
 MAX_LENGTH = 2000  # The max number of words in a sentence we will take
 TRAIN_TAKE_SIZE = 0  # How much we take from the dataset for the training - can be set to 0 to take everything (needs to be at least BATCH_SIZE. Steps for each epoch is TRAIN_TAKE_SIZE//BATCH_SIZE)
-TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
+TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
+TEST_TAKE_PERCENTAGE = 0.2  # How much we take from the dataset for the test and validation, in percentage. [This setting overrides the test_take_size, setting this to 0 will use the test_take_size].
 
 # Program global variables
 db_model = None
@@ -59,7 +61,21 @@ def load_dataset(dataset, using_tfds=True):
         # We take all the text from the dataset, and put it into one set - for the encoder
         text_data = dataset.map(lambda text, label: text)
 
+        # Calculate our test take size and validation steps, depending on our percentage that was specified
+        global TEST_TAKE_SIZE
+        if TEST_TAKE_PERCENTAGE > 0:
+            dataset_size = len(dataset)
+            TEST_TAKE_SIZE = dataset_size*TEST_TAKE_PERCENTAGE
+            # Now we calculate the amount of validation steps, which amount to the calculated test_take size, and round it
+            global VALIDATION_STEPS
+            VALIDATION_STEPS = int(TEST_TAKE_SIZE//BATCH_SIZE)  # Make sure it's an integer
+            # And now we finish with recalculating the test_take size, by using this number of validation steps
+            TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE
+
         # ---=Time to get the training dataset and the testing dataset=--- #
+
+        # Shuffle the dataset once
+        dataset = dataset.shuffle(BUFFER_SIZE)
 
         # Data performance - prefetching (https://www.tensorflow.org/guide/data_performance#prefetching)
         AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -274,14 +290,22 @@ def run(model_name=None):
         print("Couldn't get model summary - " + str(e))
 
     # Get a new checkpoint file and callback to it
-    print("Readying the checkpoint file...")
+    print("Readying the callbacks...")
     cp_callback = new_checkpointfile()
-    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + model_name,
-                                                 update_freq='batch')  # Histogram_freq removed cuz not supported by trackableweighthandlers
+    # Add a callback to TensorBoard
+    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="logs/training/" + model_name, histogram_freq=1,
+                                                 update_freq='epoch')  # Histogram_freq removed cuz not supported by trackableweighthandlers, if using then make sure to modify callbacks.py, or it will throw an error
     # Add tensorboard files path to db
     addFile(db_model, "logs/training/" + model_name, "TensorBoard")
-    callbacks = [cp_callback, tb_callback]
-    print("Checkpoint file ready!")
+    # Add an EarlyStopping callback, to stop the model when it reaches its lowest value in loss
+    es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOPPING_PATIENCE)
+    # Add a ModelCheckpoint callback, to try and save the best model from the training
+    path = "models/deep_models/BestSaveModel/"+model_name
+    mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=path, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+    addFile(db_model, path, "BestSaveModel")  # Add path to db
+    # Add the callbacks to the callbacks function
+    callbacks = [cp_callback, tb_callback, mc_callback, es_callback]
+    print("Callbacks ready!")
 
     # We train the model
     print("Initiating training sequence...")
@@ -325,7 +349,7 @@ def run(model_name=None):
     print("Adding model features to database...")
     features = addFeatures(model=db_model, t_accuracy=history.history['accuracy'][-1],
                            t_loss=history.history['loss'][-1], v_accuracy=history.history['val_accuracy'][-1],
-                           v_loss=history.history['val_loss'][-1], e_accuracy=test_loss, e_loss=test_loss,
+                           v_loss=history.history['val_loss'][-1], e_accuracy=test_acc, e_loss=test_loss,
                            buffer_size=BUFFER_SIZE, batch_size=BATCH_SIZE, epochs=EPOCHS,
                            validation_steps=VALIDATION_STEPS, learning_rate=LEARNING_RATE, dropout=DROPOUT,
                            embed_dim=EMBED_DIM, deep_units=DEEP_UNITS, dense_units=DENSE_UNITS,
