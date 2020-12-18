@@ -16,22 +16,22 @@ environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 
 # Variables for the AI learning
-BUFFER_SIZE = 10000  # Used for suffling the datasets
+BUFFER_SIZE = 10000  # Used for shuffling the datasets
 BATCH_SIZE = 64  # Samples we run through before the model is updated
-EPOCHS = 50  # The amount of times the dataset is run through in training
+EPOCHS = 50  # The amount of times the dataset is run through in training - though we stop the training if the validation accuracy decreases
 VALIDATION_STEPS = 30  # How many batches we run through during validation // This is calculated when we load the dataset
 LEARNING_RATE = 1e-4  # The rate at which our weights will be updated
 EMBED_DIM = 64  # The size of the embed layer's vector space
 DEEP_UNITS = 64  # The amount of units in our deep network LSTM layer
 DENSE_UNITS = 64  # The amount of units in our dense layer
 DROPOUT = 0.5  # To make sure we don't overfit, we have a dropout layer with this value
-EARLY_STOPPING_PATIENCE = 10
+EARLY_STOPPING_PATIENCE = 10  # For our early stopping check, we give the model this amount of epochs to get better again
 
 # Data variables - also changes learning
 MAX_FEATURES = 20000  # The max vocab size we will train
 MAX_LENGTH = 2000  # The max number of words in a sentence we will take
 TRAIN_TAKE_SIZE = 0  # How much we take from the dataset for the training - can be set to 0 to take everything (needs to be at least BATCH_SIZE. Steps for each epoch is TRAIN_TAKE_SIZE//BATCH_SIZE)
-TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferrably just be that)
+TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE  # How much we take from the dataset for the test and validation (needs to be at least VALIDATION_STEPS*BATCH_SIZE, but preferably just be that)
 TEST_TAKE_PERCENTAGE = 0.2  # How much we take from the dataset for the test and validation, in percentage. [This setting overrides the test_take_size, setting this to 0 will use the test_take_size].
 
 # Program global variables
@@ -40,6 +40,7 @@ db_model = None
 
 # Function for loading a dataset to use on the model
 def load_dataset(dataset, using_tfds=True):
+    global BUFFER_SIZE
     if using_tfds:
         dataset, info = tfds.load(dataset, with_info=True,
                                   as_supervised=True)
@@ -63,14 +64,18 @@ def load_dataset(dataset, using_tfds=True):
 
         # Calculate our test take size and validation steps, depending on our percentage that was specified
         global TEST_TAKE_SIZE
+        dataset_size = len(dataset)
         if TEST_TAKE_PERCENTAGE > 0:
-            dataset_size = len(dataset)
             TEST_TAKE_SIZE = dataset_size*TEST_TAKE_PERCENTAGE
             # Now we calculate the amount of validation steps, which amount to the calculated test_take size, and round it
             global VALIDATION_STEPS
             VALIDATION_STEPS = int(TEST_TAKE_SIZE//BATCH_SIZE)  # Make sure it's an integer
             # And now we finish with recalculating the test_take size, by using this number of validation steps
             TEST_TAKE_SIZE = VALIDATION_STEPS*BATCH_SIZE
+
+        # If dataset is bigger than buffer size, add current buffer size to the dataset size, to ensure proper shuffling
+        if dataset_size >= BUFFER_SIZE:
+            BUFFER_SIZE = dataset_size+BUFFER_SIZE
 
         # ---=Time to get the training dataset and the testing dataset=--- #
 
@@ -83,8 +88,10 @@ def load_dataset(dataset, using_tfds=True):
         # We skip the given amount of size for the test set, and shuffle
         train_data = dataset.skip(TEST_TAKE_SIZE).shuffle(BUFFER_SIZE)
         # If we are given a training size, take that
+        global TRAIN_TAKE_SIZE
         if TRAIN_TAKE_SIZE > 0:
             train_data = train_data.take(TRAIN_TAKE_SIZE)
+        TRAIN_TAKE_SIZE = len(train_data)
         # Create batches of our batch size, cache the dataset to memory, and put prefetching on it
         train_data = train_data.batch(BATCH_SIZE).cache().prefetch(AUTOTUNE)
 
@@ -224,7 +231,7 @@ def create_model(encoder):
     model = tf.keras.Sequential([
         tf.keras.Input(shape=(1,), dtype=tf.string),  # Our input into the model is a string
         encoder,  # Our text encoder to make text into integers
-        tf.keras.layers.Embedding(input_dim=MAX_FEATURES, output_dim=EMBED_DIM),  # Embedding layer to store one vector pr. word integer
+        tf.keras.layers.Embedding(input_dim=MAX_FEATURES+1, output_dim=EMBED_DIM),  # Embedding layer to store one vector pr. word integer
         tf.keras.layers.Masking(mask_value=0),  # Remove the zeroes that are given from the embedding layer (having the mask_zero value on the embedding layer throws an error [tensorflow.python.framework.errors_impl.CancelledError:  [_Derived_]RecvAsync is cancelled.])
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(DEEP_UNITS)),  # Bidirectional layer for RNN
         tf.keras.layers.Dense(DENSE_UNITS, activation="relu"),  # Dense layer with neurons
@@ -301,7 +308,7 @@ def run(model_name=None):
     es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOPPING_PATIENCE)
     # Add a ModelCheckpoint callback, to try and save the best model from the training
     bestmodel_path = "models/deep_models/BestSaveModel/"+model_name
-    mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=bestmodel_path, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+    mc_callback = tf.keras.callbacks.ModelCheckpoint(filepath=bestmodel_path, monitor='val_loss', mode='min', verbose=1, save_best_only=True)
     addFile(db_model, bestmodel_path, "BestSaveModel")  # Add path to db
     # Add the callbacks to the callbacks function
     callbacks = [cp_callback, tb_callback, mc_callback, es_callback]
@@ -330,17 +337,10 @@ def run(model_name=None):
     else:
         print("An error occurred whilst saving the model!")
 
-    print("Saving the model, trained word embeddings...")
-    saved = save_model(model, embedding=encoder, name=model_name)
-    if saved:
-        print("Saved the model!")
-    else:
-        print("An error occurred whilst saving the model!")
-
     # We test the best model
-    print("Testing the best model...")
+    print("Testing the model...")
     # Get the model
-    best_model = tf.keras.models.load_model(bestmodel_path, compile=False)
+    best_model = tf.keras.models.load_model(bestmodel_path, compile=True)
     best_model.summary()
     test_loss, test_acc = best_model.evaluate(test_dataset)
 
@@ -348,12 +348,19 @@ def run(model_name=None):
     print('Test Accuracy: {}'.format(test_acc))
     print("Done testing the best model!\n")
 
+    print("Saving the best model, trained word embeddings...")
+    saved = save_model(best_model, embedding=encoder, name=model_name)
+    if saved:
+        print("Saved the best model!")
+    else:
+        print("An error occurred whilst saving the best model!")
+
     # We add the model to the database
     print("Adding model features to database...")
     features = addFeatures(model=db_model, t_accuracy=history.history['accuracy'][-1],
                            t_loss=history.history['loss'][-1], v_accuracy=history.history['val_accuracy'][-1],
                            v_loss=history.history['val_loss'][-1], e_accuracy=test_acc, e_loss=test_loss,
-                           buffer_size=BUFFER_SIZE, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                           buffer_size=BUFFER_SIZE, batch_size=BATCH_SIZE, epochs=len(history.history['loss']),
                            validation_steps=VALIDATION_STEPS, learning_rate=LEARNING_RATE, dropout=DROPOUT,
                            embed_dim=EMBED_DIM, deep_units=DEEP_UNITS, dense_units=DENSE_UNITS,
                            max_features=MAX_FEATURES, max_length=MAX_LENGTH, train_take_size=TRAIN_TAKE_SIZE,
