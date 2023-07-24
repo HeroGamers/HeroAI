@@ -3,5 +3,5 @@ tensorflow-datasets==3.2.1
 numpy==1.22.0
 matplotlib==3.3.1
 pandas==1.1.1
-Flask==1.1.2
+Flask==2.2.5
 Flask-RESTful==0.3.8
